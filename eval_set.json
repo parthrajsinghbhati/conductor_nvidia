@@ -1,0 +1,52 @@
+[
+  {
+    "id": 1,
+    "question": "What is the chemical symbol and atomic number of gold?",
+    "key_terms": ["au", "gold", "79"]
+  },
+  {
+    "id": 2,
+    "question": "Which planet has the Great Red Spot storm?",
+    "key_terms": ["jupiter"]
+  },
+  {
+    "id": 3,
+    "question": "Who developed general relativity and when?",
+    "key_terms": ["einstein", "1915"]
+  },
+  {
+    "id": 4,
+    "question": "What is the powerhouse of the cell?",
+    "key_terms": ["mitochondria"]
+  },
+  {
+    "id": 5,
+    "question": "What is the speed of light in a vacuum in meters per second?",
+    "key_terms": ["299792458", "speed of light"]
+  },
+  {
+    "id": 6,
+    "question": "Who wrote the novel 1984?",
+    "key_terms": ["orwell", "george orwell"]
+  },
+  {
+    "id": 7,
+    "question": "What is the capital of Japan?",
+    "key_terms": ["tokyo"]
+  },
+  {
+    "id": 8,
+    "question": "What gas do plants absorb from the atmosphere for photosynthesis?",
+    "key_terms": ["carbon dioxide", "co2"]
+  },
+  {
+    "id": 9,
+    "question": "How many continents are there on Earth?",
+    "key_terms": ["7", "seven"]
+  },
+  {
+    "id": 10,
+    "question": "What is the largest organ in the human body?",
+    "key_terms": ["skin"]
+  }
+]

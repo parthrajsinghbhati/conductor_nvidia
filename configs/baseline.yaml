@@ -1,0 +1,12 @@
+steps:
+  decompose:
+    model: nvidia/nemotron-3-ultra-550b-a55b
+    max_tokens: 128
+  retrieve:
+    model: nvidia/nemotron-3-ultra-550b-a55b
+    max_tokens: 200
+  synthesize:
+    model: nvidia/nemotron-3-ultra-550b-a55b
+    max_tokens: 256
+execution:
+  retrieve_mode: serial   # serial | parallel
