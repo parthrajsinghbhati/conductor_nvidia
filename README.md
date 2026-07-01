@@ -12,7 +12,7 @@ Conductor is a supervisory multi-agent system — an **SRE for agentic workflows
 
 ## For judges — run the demo
 
-Pick **one** option below. Mock mode needs no API key and finishes in ~10 seconds. Real mode calls live Nemotron on NVIDIA NIM (~8–15 min).
+Pick **one** option below. Mock mode needs no API key and finishes in ~10 seconds. Real mode calls live Nemotron on NVIDIA NIM (~10–20 min quick, ~30–60 min full).
 
 ### Option A — Mock demo in Codespaces (recommended, no API key)
 
@@ -43,7 +43,7 @@ pip install -r requirements.txt
 python demo.py --mock --yes          # ~10 seconds
 ```
 
-### Option C — Real run with live NVIDIA API (~8–15 min)
+### Option C — Real run with live NVIDIA API (~10–20 min)
 
 Use this if you want to see **actual Nemotron inference** (not simulated). Requires a free API key from [build.nvidia.com](https://build.nvidia.com).
 
@@ -54,23 +54,25 @@ cp .env.example .env
 # Edit .env — set:  NVIDIA_API_KEY=nvapi-your-key-here
 
 python scripts/validate_key.py       # must show ✅ for both models (~5 sec)
-bash scripts/run_real.sh             # quick live run: 3 questions, ~8–15 min
+bash scripts/run_real.sh             # quick live run: 3 questions, ~10–20 min
 ```
 
 **Or run manually:**
 
 ```bash
-python demo.py --real --quick --yes  # quick: 3 questions (~8–15 min)
+python demo.py --real --quick --yes  # quick: 3 questions (~10–20 min)
 python demo.py --real --yes          # full: 10 questions (~30–60 min)
 ```
 
 | Command | API key | Time | Questions |
 |---|---|---|---|
 | `python demo.py --mock --yes` | Not needed | ~10 sec | 10 |
-| `python demo.py --real --quick --yes` | Required | ~8–15 min | 3 |
+| `python demo.py --real --quick --yes` | Required | ~10–20 min | 3 |
 | `python demo.py --real --yes` | Required | ~30–60 min | 10 |
 
 **Note:** `--real` overrides Codespaces' default mock mode. You do not need to change `MOCK_MODE` in `.env` if you pass `--real`.
+
+**What `--quick` changes:** uses 3 eval questions and lower `max_tokens` on pipeline steps. Profiler, Strategist, and Critic still run with live LLM calls — only the heavy pipeline eval is shortened.
 
 ---
 

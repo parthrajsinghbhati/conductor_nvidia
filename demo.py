@@ -39,7 +39,7 @@ def parse_args():
     p.add_argument(
         "--quick",
         action="store_true",
-        help="Faster live run: 3 questions, lower max_tokens, skip extra LLM summaries",
+        help="Faster live run: 3 questions and lower max_tokens (agents still run)",
     )
     p.add_argument(
         "--questions",
@@ -224,14 +224,14 @@ def main():
     baseline_config = WorkflowConfig.from_yaml(str(BASELINE_CFG))
     baseline_config.name = "baseline"
 
-    skip_llm_extras = args.quick and not client.mock
-    if skip_llm_extras:
+    skip_llm_extras = False
+    if args.quick and not client.mock:
         baseline_config = _shrink_tokens(baseline_config)
         CONSOLE.print(
-            "\n[yellow]Quick live mode[/yellow]: 3 questions, reduced max_tokens, "
-            "no Strategist/Profiler/Critic LLM calls"
+            "\n[yellow]Quick live mode[/yellow]: 3 questions, reduced max_tokens "
+            "(Profiler, Strategist, and Critic still run)"
         )
-        CONSOLE.print("[dim]Estimated time: ~8–15 min (full --real is ~30–60 min)[/dim]")
+        CONSOLE.print("[dim]Estimated time: ~10–20 min (full --real is ~30–60 min)[/dim]")
 
     CONSOLE.print(f"\nEval set: {len(eval_set)} questions")
 

@@ -13,5 +13,5 @@ echo "Validating API key…"
 python scripts/validate_key.py || exit 1
 
 echo ""
-echo "Starting live demo (quick mode: 3 questions, ~8–15 min)…"
+echo "Starting live demo (quick mode: 3 questions, ~10–20 min)…"
 python demo.py --real --quick --yes
