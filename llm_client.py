@@ -14,20 +14,40 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BIG_MODEL   = "nvidia/nemotron-3-ultra-550b-a55b"
-SMALL_MODEL = "nvidia/llama-3.1-nemotron-nano-8b-v1"
+BIG_MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
+# Default: fast NIM-hosted instruct model. Override in .env for Nemotron Nano.
+NEMOTRON_NANO_MODEL = "nvidia/llama-3.1-nemotron-nano-8b-v1"
+FALLBACK_SMALL_MODEL = "meta/llama-3.1-8b-instruct"
+SMALL_MODEL = os.getenv("SMALL_MODEL", FALLBACK_SMALL_MODEL)
+
+# Nemotron Nano 8B v1 on NIM may hang unless reasoning is disabled + prefill.
+NANO_SYSTEM = "detailed thinking off"
+NANO_PREFILL = "\n\n"
+
+DEFAULT_TIMEOUT_S = 120.0
+NANO_TIMEOUT_S = 45.0
 
 # Approximate cost per token (input ≈ output averaged for simplicity)
 COST_PER_TOKEN: dict[str, float] = {
-    BIG_MODEL:   7.99 / 1_000_000,
-    SMALL_MODEL: 0.10 / 1_000_000,
+    BIG_MODEL:            7.99 / 1_000_000,
+    NEMOTRON_NANO_MODEL:  0.10 / 1_000_000,
+    FALLBACK_SMALL_MODEL: 0.10 / 1_000_000,
 }
 
 # Mock: ms to generate one output token
 MS_PER_TOKEN: dict[str, float] = {
-    BIG_MODEL:   0.60,   # ~600 ms / 1000 tokens
-    SMALL_MODEL: 0.18,   # ~180 ms / 1000 tokens
+    BIG_MODEL:            0.60,
+    NEMOTRON_NANO_MODEL:  0.18,
+    FALLBACK_SMALL_MODEL: 0.18,
 }
+
+
+def is_nano_model(model: str) -> bool:
+    return "nemotron-nano" in model.lower()
+
+
+def is_small_model(model: str) -> bool:
+    return model != BIG_MODEL
 
 
 @dataclass
@@ -55,6 +75,7 @@ class NvidiaClient:
                 self._oai = OpenAI(
                     base_url="https://integrate.api.nvidia.com/v1",
                     api_key=api_key,
+                    timeout=DEFAULT_TIMEOUT_S,
                 )
             except ImportError:
                 self.mock = True
@@ -77,11 +98,15 @@ class NvidiaClient:
 
     def _real(self, model: str, messages: list[dict], max_tokens: int) -> LLMResponse:
         t0 = time.monotonic()
-        resp = self._oai.chat.completions.create(
-            model=model,
-            messages=messages,
-            max_tokens=max_tokens,
-        )
+        kwargs: dict = {"model": model, "messages": messages, "max_tokens": max_tokens}
+        request_timeout = DEFAULT_TIMEOUT_S
+
+        if is_nano_model(model):
+            kwargs["messages"] = self._nano_model_messages(messages)
+            kwargs["temperature"] = 0
+            request_timeout = NANO_TIMEOUT_S
+
+        resp = self._oai.chat.completions.create(**kwargs, timeout=request_timeout)
         latency_ms = (time.monotonic() - t0) * 1000
         u = resp.usage
         total = u.prompt_tokens + u.completion_tokens
@@ -147,7 +172,7 @@ class NvidiaClient:
             )
 
         if step_name == "synthesize":
-            if model == SMALL_MODEL:
+            if is_small_model(model):
                 # Deliberately vague — triggers the quality regression the demo needs to catch
                 return (
                     "The topic involves several interrelated factors. "
@@ -173,6 +198,26 @@ class NvidiaClient:
             "Analysis complete. The evidence strongly supports the proposed approach. "
             "Confidence is high based on the available data."
         )
+
+    @staticmethod
+    def _nano_model_messages(messages: list[dict]) -> list[dict]:
+        """Nemotron Nano: system 'detailed thinking off' + empty thinking prefill."""
+        out: list[dict] = []
+        has_system = False
+        for m in messages:
+            if m.get("role") == "system":
+                has_system = True
+                content = m.get("content", "")
+                if "detailed thinking" not in content.lower():
+                    content = f"{NANO_SYSTEM}\n\n{content}"
+                out.append({"role": "system", "content": content})
+            else:
+                out.append(dict(m))
+        if not has_system:
+            out.insert(0, {"role": "system", "content": NANO_SYSTEM})
+        if not out or out[-1].get("role") != "assistant":
+            out.append({"role": "assistant", "content": NANO_PREFILL})
+        return out
 
     @staticmethod
     def _extract_subject(text: str) -> str:

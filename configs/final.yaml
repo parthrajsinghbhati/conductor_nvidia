@@ -1,9 +1,10 @@
 execution:
+  cache_retrieve: true
   retrieve_mode: parallel
 steps:
   decompose:
     max_tokens: 128
-    model: nvidia/llama-3.1-nemotron-nano-8b-v1
+    model: meta/llama-3.1-8b-instruct
   retrieve:
     max_tokens: 200
     model: nvidia/nemotron-3-ultra-550b-a55b

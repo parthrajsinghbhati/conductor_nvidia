@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from llm_client import NvidiaClient
 from observability import RunMetrics
 from target_workflow import WorkflowConfig, ResearchPipeline
+from conductor.nat_adapter import export_nat_traces, export_standardized_csv
 
 
 def run_eval(
@@ -13,6 +15,7 @@ def run_eval(
     eval_set: list[dict],
     client: NvidiaClient | None = None,
     quality_fn=None,
+    export_traces_dir: Path | str | None = Path("traces"),
 ) -> RunMetrics:
     """Run the pipeline over the eval set and return aggregated metrics."""
     pipeline = ResearchPipeline(config, client=client or NvidiaClient())
@@ -29,7 +32,6 @@ def run_eval(
 
     wall_ms = (time.monotonic() - wall_start) * 1000
 
-    # Quality scoring
     if quality_fn is None:
         quality_fn = keyword_quality
 
@@ -39,16 +41,22 @@ def run_eval(
     ]
     quality = sum(scores) / max(len(scores), 1)
 
-    return RunMetrics(
+    metrics = RunMetrics(
         config_name=config.name,
         traces=traces,
         wall_latency_ms=wall_ms,
         quality_score=quality,
     )
 
+    if export_traces_dir:
+        out = Path(export_traces_dir)
+        export_nat_traces(traces, out, config.name)
+        export_standardized_csv(traces, out, config.name)
+
+    return metrics
+
 
 def keyword_quality(answer: str, key_terms: list[str]) -> float:
-    """Simple quality metric: fraction of key_terms present in the answer."""
     if not key_terms:
         return 1.0
     answer_lower = answer.lower()

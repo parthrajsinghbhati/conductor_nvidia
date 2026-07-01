@@ -1,4 +1,4 @@
-"""Strategist agent: reasons over the profile and proposes one optimization."""
+"""Strategist agent: profile-driven optimization proposals."""
 from __future__ import annotations
 
 import json
@@ -16,39 +16,47 @@ class Optimization:
     name: str
     description: str
     rationale: str
-    config_delta: dict[str, Any]   # human-readable summary of what changes
+    config_delta: dict[str, Any]
 
 
-# The fixed sequence of optimizations Conductor will attempt (in order).
-# Conductor advances only after the previous is accepted.
-_OPTIMIZATION_SEQUENCE = [
+_OPTIMIZATION_CATALOG = [
     {
         "id": 1,
         "name": "route_decompose_to_small",
-        "description": "Route the decompose step to Nemotron Nano",
+        "description": "Route the decompose step to the small model",
         "rationale": (
             "Decompose only reformats the question into sub-questions — a simple "
-            "structural task that a small model handles just as well at 10× lower cost."
+            "structural task that a small model handles just as well at lower cost."
         ),
         "config_delta": {"steps.decompose.model": f"big → small ({SMALL_MODEL})"},
     },
     {
         "id": 2,
         "name": "parallelize_retrieve",
-        "description": "Run the retrieve sub-calls in parallel (ThreadPoolExecutor)",
+        "description": "Run retrieve sub-calls in parallel (ThreadPoolExecutor)",
         "rationale": (
-            "The three retrieve calls are fully independent. Running them concurrently "
-            "reduces wall-clock latency to max(retrieve) instead of sum(retrieve)."
+            "Retrieve calls are independent. Running them concurrently reduces "
+            "wall-clock latency to max(retrieve) instead of sum(retrieve)."
         ),
         "config_delta": {"execution.retrieve_mode": "serial → parallel"},
     },
     {
         "id": 3,
-        "name": "route_synthesize_to_small",
-        "description": "Route the synthesize step to Nemotron Nano",
+        "name": "enable_retrieve_cache",
+        "description": "Enable LRU cache for retrieve sub-calls",
         "rationale": (
-            "Synthesize is the most reasoning-heavy step. Routing it to the small model "
-            "would cut cost, but risks losing accuracy on complex multi-hop answers."
+            "Repeated sub-questions across the eval set can be served from cache, "
+            "eliminating redundant LLM calls and token spend."
+        ),
+        "config_delta": {"execution.cache_retrieve": "false → true"},
+    },
+    {
+        "id": 4,
+        "name": "route_synthesize_to_small",
+        "description": "Route the synthesize step to the small model",
+        "rationale": (
+            "Synthesize is reasoning-heavy. Routing to Nano cuts cost but may "
+            "lose accuracy on multi-hop answers — must pass quality gate."
         ),
         "config_delta": {"steps.synthesize.model": f"big → small ({SMALL_MODEL})"},
     },
@@ -56,60 +64,66 @@ _OPTIMIZATION_SEQUENCE = [
 
 
 class Strategist:
-    """Proposes the next optimization to try given the current profile and iteration."""
+    """Picks the next applicable optimization from the profile (not blind iteration)."""
 
-    def __init__(self, client: NvidiaClient | None = None):
+    def __init__(self, client: NvidiaClient | None = None, skip_llm_extras: bool = False):
         self.client = client or NvidiaClient()
+        self.skip_llm_extras = skip_llm_extras
 
-    def propose(self, profile: ProfileReport, iteration: int) -> Optimization | None:
-        """Return the next Optimization, or None when the sequence is exhausted."""
-        if iteration >= len(_OPTIMIZATION_SEQUENCE):
-            return None
+    def propose(
+        self,
+        profile: ProfileReport,
+        config: WorkflowConfig,
+        tried_names: set[str],
+    ) -> Optimization | None:
+        for raw in _OPTIMIZATION_CATALOG:
+            if raw["name"] in tried_names:
+                continue
+            if not self._is_applicable(raw["name"], profile, config):
+                continue
+            opt = Optimization(**raw)
+            if not self.client.mock and not self.skip_llm_extras:
+                opt.rationale = self._llm_rationale(profile, opt)
+            return opt
+        return None
 
-        raw = _OPTIMIZATION_SEQUENCE[iteration]
-        opt = Optimization(**raw)
+    def _is_applicable(self, name: str, profile: ProfileReport, config: WorkflowConfig) -> bool:
+        decompose_p = next((p for p in profile.steps if p.step == "decompose"), None)
+        synthesize_p = next((p for p in profile.steps if p.step == "synthesize"), None)
 
-        # In mock mode (or when strategist reasoning would be expensive) we trust the
-        # pre-defined sequence.  With a real key, we can ask the model to confirm the
-        # rationale — this is where NAT traces would feed into a real Nemotron call.
-        if not self.client.mock:
-            opt.rationale = self._llm_rationale(profile, opt)
-
-        return opt
-
-    # ── LLM-backed rationale (real mode only) ─────────────────────────────
+        if name == "route_decompose_to_small":
+            return (
+                config.decompose.model != SMALL_MODEL
+                and decompose_p is not None
+                and decompose_p.complexity == "low"
+            )
+        if name == "parallelize_retrieve":
+            return config.retrieve_mode == "serial"
+        if name == "enable_retrieve_cache":
+            return not config.cache_retrieve
+        if name == "route_synthesize_to_small":
+            return config.synthesize.model != SMALL_MODEL
+        return False
 
     def _llm_rationale(self, profile: ProfileReport, opt: Optimization) -> str:
         profile_txt = json.dumps(
-            [
-                {
-                    "step": p.step,
-                    "avg_latency_ms": round(p.avg_latency_ms, 1),
-                    "avg_tokens": round(p.avg_tokens, 1),
-                    "complexity": p.complexity,
-                    "pct_latency": round(p.pct_latency * 100, 1),
-                }
-                for p in profile.steps
-            ],
+            [{"step": p.step, "complexity": p.complexity, "pct_latency": round(p.pct_latency * 100, 1)}
+             for p in profile.steps],
             indent=2,
         )
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "You are an expert ML infrastructure engineer optimising an agentic "
-                    "workflow. Given the profiling data and a proposed optimization, "
-                    "write a 2–3 sentence rationale explaining WHY this optimization is "
-                    "safe and likely to improve cost/latency without harming quality."
+                    "You are an ML infrastructure engineer. Given profiling data and a "
+                    "proposed workflow optimization, write 2 sentences on why it is safe."
                 ),
             },
             {
                 "role": "user",
                 "content": (
                     f"Profile:\n{profile_txt}\n\n"
-                    f"Proposed optimization: {opt.name}\n"
-                    f"Description: {opt.description}\n\n"
-                    "Rationale:"
+                    f"Optimization: {opt.name}\n{opt.description}\n\nRationale:"
                 ),
             },
         ]
@@ -118,7 +132,6 @@ class Strategist:
 
 
 def apply_optimization(config: WorkflowConfig, opt: Optimization) -> WorkflowConfig:
-    """Return a new WorkflowConfig with the optimization applied."""
     import copy
     cfg = copy.deepcopy(config)
 
@@ -129,6 +142,10 @@ def apply_optimization(config: WorkflowConfig, opt: Optimization) -> WorkflowCon
     elif opt.name == "parallelize_retrieve":
         cfg.retrieve_mode = "parallel"
         cfg.name = f"opt{opt.id}_parallel_retrieve"
+
+    elif opt.name == "enable_retrieve_cache":
+        cfg.cache_retrieve = True
+        cfg.name = f"opt{opt.id}_retrieve_cache"
 
     elif opt.name == "route_synthesize_to_small":
         cfg.synthesize = StepConfig(model=SMALL_MODEL, max_tokens=cfg.synthesize.max_tokens)

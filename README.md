@@ -1,62 +1,34 @@
 # Conductor
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **NVIDIA Hackathon · Track A: Agentic Workflows**
 
-> Agents that make your *other* agents faster and cheaper — and prove it with a before/after number, without breaking correctness.
+> Agents that make your *other* agents faster and cheaper — and prove it with before/after numbers, without breaking correctness.
 
-Conductor is a supervisory multi-agent system — an **SRE for agentic workflows**. It profiles a target pipeline, proposes optimizations (model routing, parallelization), validates each change against a quality gate, and reports measured latency and cost savings while preserving output quality.
-
----
-
-## Problem
-
-Teams ship multi-agent systems but fly blind on cost and latency. A single request can fan out into dozens of LLM calls. The default is "use the big model everywhere and run everything serially" — which quietly burns money and adds latency.
-
-The hard part is not detecting slowness. It is **fixing it safely**. An optimizer that makes a workflow faster but subtly wrong is worse than useless.
-
-**Conductor** profiles bottlenecks, proposes config changes, validates them against a quality gate, and reverts anything that degrades output — then reports **% latency down, % cost down, quality preserved**.
+Conductor is a supervisory multi-agent system — an **SRE for agentic workflows**. It profiles a 3-step research pipeline, proposes optimizations (model routing, parallelization, caching), validates each change against a quality gate, and reports measured latency and cost savings while preserving output quality.
 
 ---
 
-## Solution
+## For judges — run the demo
 
-Four agents in a closed loop:
+Pick **one** option below. Mock mode needs no API key and finishes in ~10 seconds. Real mode calls live Nemotron on NVIDIA NIM (~8–15 min).
 
-| Agent | Job | Model |
-|---|---|---|
-| **Profiler** | Ingests workflow traces; localizes hot spots (latency, token spend) | Nemotron Ultra (hosted) |
-| **Strategist** | Reasons over the profile and proposes optimizations | Nemotron Ultra (hosted) |
-| **Executor** | Applies config changes and re-runs the workflow on the eval set | Tool-driven |
-| **Critic** | Compares quality + cost + latency vs. baseline; accepts or reverts | Rule-based quality gate |
+### Option A — Mock demo in Codespaces (recommended, no API key)
 
-```
-profile → propose → approve → apply → evaluate → accept or revert → repeat
+1. Open this repo on GitHub.
+2. Click **Code** → **Codespaces** → **Create codespace on main**.
+3. Wait for the environment to build (dependencies install automatically).
+4. In the terminal:
+
+```bash
+python demo.py --mock --yes
+# or: bash scripts/run_demo.sh
 ```
 
-**Target workflow:** a deliberately naive 3-step research pipeline — Decompose → Retrieve × N → Synthesize — where every step uses the big model and retrieve runs serially.
+**No NVIDIA API key required.** Codespaces sets `MOCK_MODE=true` automatically.
 
-**Demo optimizations:**
-1. Route **decompose** to a small model → accepted
-2. **Parallelize** retrieve calls → accepted
-3. Route **synthesize** to a small model → **rejected** (quality regression caught by the gate)
-
----
-
-## NVIDIA stack
-
-| Component | Role in Conductor |
-|---|---|
-| **NVIDIA NIM (hosted)** | All LLM inference via `integrate.api.nvidia.com` |
-| **Nemotron 3 Ultra** | Baseline pipeline + Strategist reasoning |
-| **Nemotron Nano 8B** | Small-model routing target after optimization |
-| **NeMo Agent Toolkit (NAT)** | Stretch — custom trace aggregation in MVP |
-| **OpenShell** | Stretch — config edits applied in-process for MVP |
-
-Get a free API key at [build.nvidia.com](https://build.nvidia.com).
-
----
-
-## Quick start (local)
+### Option B — Mock demo on your machine (no API key)
 
 **Requirements:** Python 3.10+
 
@@ -68,101 +40,146 @@ python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-cp .env.example .env
-# Add NVIDIA_API_KEY from https://build.nvidia.com (optional for mock demo)
-
-python demo.py --mock --yes         # fast demo, auto-approve (~10s, 10 questions)
-python demo.py --mock               # interactive — prompts [Y/n] before each change
-python demo.py --real --yes         # live Nemotron (~20–40 min)
-streamlit run app.py                # web dashboard for judges
+python demo.py --mock --yes          # ~10 seconds
 ```
 
-**Step-by-step checklist of what you need to provide and when:** see [`SETUP_CHECKLIST.md`](SETUP_CHECKLIST.md).
+### Option C — Real run with live NVIDIA API (~8–15 min)
+
+Use this if you want to see **actual Nemotron inference** (not simulated). Requires a free API key from [build.nvidia.com](https://build.nvidia.com).
+
+**In Codespaces or locally:**
+
+```bash
+cp .env.example .env
+# Edit .env — set:  NVIDIA_API_KEY=nvapi-your-key-here
+
+python scripts/validate_key.py       # must show ✅ for both models (~5 sec)
+bash scripts/run_real.sh             # quick live run: 3 questions, ~8–15 min
+```
+
+**Or run manually:**
+
+```bash
+python demo.py --real --quick --yes  # quick: 3 questions (~8–15 min)
+python demo.py --real --yes          # full: 10 questions (~30–60 min)
+```
+
+| Command | API key | Time | Questions |
+|---|---|---|---|
+| `python demo.py --mock --yes` | Not needed | ~10 sec | 10 |
+| `python demo.py --real --quick --yes` | Required | ~8–15 min | 3 |
+| `python demo.py --real --yes` | Required | ~30–60 min | 10 |
+
+**Note:** `--real` overrides Codespaces' default mock mode. You do not need to change `MOCK_MODE` in `.env` if you pass `--real`.
 
 ---
 
-## Hosting & deployment
+## What you should see
 
-This project ships as a **CLI demo** (Rich terminal) plus an optional **Streamlit web UI**. "Hosting" means making it runnable for judges, teammates, and CI.
+The terminal demo runs four optimization rounds on a 10-question eval set:
 
-### Web UI (judges)
-
-```bash
-streamlit run app.py
-```
-
-Toggle mock mode in the sidebar, click **Run Conductor**, expand each optimization to see config diffs and verdicts.
-
-### 1. Local (recommended for live pitch)
-
-Best for hackathon presentations. Run on your laptop with the terminal visible to judges.
-
-```bash
-source .venv/bin/activate
-python demo.py --mock     # reliable, no network — use if API key fails
-python demo.py --real     # live NVIDIA endpoints — use if key works
-```
-
-Record the terminal with [asciinema](https://asciinema.org/) or QuickTime as a backup demo video.
-
-### 2. GitHub (hackathon submission)
-
-Push the repo and add these in **Settings → Secrets and variables → Actions**:
-
-| Secret | Value |
+| Step | What happens |
 |---|---|
-| `NVIDIA_API_KEY` | Your key from build.nvidia.com (optional — CI uses mock mode) |
+| **Baseline** | Naive config — Nemotron Ultra on every step, serial retrieve, no cache |
+| **Profile** | Bottleneck table + notes (e.g. decompose is low-complexity) |
+| **Optimize loop** | Four proposals; you auto-approve with `--yes` |
 
-Judges clone and follow [Quick start](#quick-start-local). Include a **demo video link** in the repo description or submission form.
+**Expected outcome:**
 
-### 3. GitHub Codespaces (zero-setup for judges)
+| # | Optimization | Verdict |
+|---|---|---|
+| 1 | Route **decompose** → small model | ✅ Accepted |
+| 2 | **Parallelize** retrieve | ✅ Accepted |
+| 3 | **Enable retrieve cache** | ✅ Accepted |
+| 4 | Route **synthesize** → small model | ❌ **Rejected** (quality regression) |
 
-Open the repo in a cloud dev environment — no local Python install needed.
+**Final summary (approximate):** ~65–70% faster, ~65–70% cheaper, **quality preserved**. Accepted configs are saved under `configs/opt*.yaml` and `configs/final.yaml`.
 
-1. Push this repo to GitHub.
-2. Click **Code → Codespaces → Create codespace on main**.
-3. In the terminal:
-   ```bash
-   pip install -r requirements.txt
-   python demo.py --mock
-   ```
+This rejection is intentional — it shows the **quality gate** working: Conductor will not ship a faster-but-wrong config.
 
-A `.devcontainer/devcontainer.json` is included for automatic setup.
+During the run you will also see **sandbox paths** (`traces/sandbox/iter*/candidate.yaml`) — each optimization is staged in an isolated directory before it is applied.
 
-### 4. Docker (any cloud VM or container platform)
+---
 
-Build and run anywhere Docker is supported (AWS EC2, GCP Compute, Azure VM, Railway, Fly.io, etc.).
+## Problem & solution
 
-```bash
-docker build -t conductor .
-docker run --rm conductor                          # mock demo (default)
-docker run --rm -e NVIDIA_API_KEY=nvapi-xxx conductor python demo.py --real
+**Problem:** Multi-agent workflows are expensive and slow. The default is "big model everywhere, run serially" — and optimizers that trade quality for speed are dangerous.
+
+**Solution:** Four agents in a closed loop:
+
+```
+profile → propose → approve → sandbox → apply → evaluate → accept or revert → repeat
 ```
 
-On a cloud VM (e.g. NVIDIA Brev, a $5 Linux droplet):
-
-```bash
-ssh user@your-vm
-git clone <your-repo-url> && cd nvidia-main
-docker build -t conductor .
-docker run --rm -e NVIDIA_API_KEY=$NVIDIA_API_KEY conductor python demo.py --real
-```
-
-### 5. GitHub Actions (CI smoke test)
-
-Every push/PR runs the full demo in mock mode automatically (see `.github/workflows/ci.yml`). This proves the loop works without spending API credits.
-
-### 6. NVIDIA cloud (real inference)
-
-LLM calls always go to **NVIDIA hosted NIM** — you do not self-host models for the MVP.
-
-| Option | Use case |
+| Agent | Role |
 |---|---|
-| [build.nvidia.com](https://build.nvidia.com) API key | Default — Mac/laptop/cloud VM all call hosted Nemotron |
-| NVIDIA Brev / Launchpad | GPU VM if you add stretch features (self-hosted NIM, Dynamo) |
-| Google Colab | Alternative if local install is fiddly — copy repo + `pip install` |
+| **Profiler** | Aggregates traces; identifies bottlenecks and complexity per step |
+| **Strategist** | Profile-driven optimization proposals (not blind iteration) |
+| **Executor** | Runs eval set with sandbox-staged config |
+| **Critic** | Quality gate — rejects changes that drop eval score by >10% |
 
-**No GPU required** for the current demo. Profiling, routing, parallelization, and the eval gate all run on CPU and call hosted endpoints.
+---
+
+## NVIDIA stack
+
+| Component | Role |
+|---|---|
+| **NVIDIA NIM (hosted)** | All LLM inference via `integrate.api.nvidia.com` |
+| **Nemotron 3 Ultra** | Baseline pipeline + Strategist reasoning (real mode) |
+| **Llama 3.1 8B Instruct** | Default small model for routing optimizations |
+| **NeMo Agent Toolkit (NAT)** | Trace export to `traces/*.json` and `*.csv` (NAT profiler shape); optional full NAT via `pip install -r requirements-nat.txt` |
+| **OpenShell-style sandbox** | Each candidate config is staged in `traces/sandbox/` before apply (see below) |
+
+### OpenShell sandbox & NAT — what is integrated
+
+| Feature | Status | Where |
+|---|---|---|
+| **Sandbox staging** | ✅ Working | `conductor/sandbox.py` — writes `candidate.yaml` to `traces/sandbox/iter{N}_{opt}/` before each optimization is applied |
+| **NAT trace export** | ✅ Working | `conductor/nat_adapter.py` — exports `traces/{run}_profiler_traces.json` and `*_standardized_data.csv` after every eval pass |
+| **Full OpenShell runtime** | Not integrated | Would require OpenShell SDK access; we use the same *staging pattern* (isolate → review → apply) |
+| **Full NAT library** | Optional | `pip install -r requirements-nat.txt` — demo works without it |
+
+To verify sandbox after a run:
+
+```bash
+ls traces/sandbox/*/candidate.yaml
+ls traces/baseline_profiler_traces.json
+```
+
+Use `--no-sandbox` to skip staging (not recommended for demo).
+
+---
+
+## Project structure
+
+```
+.
+├── demo.py                 # Entry point — Rich terminal demo
+├── scripts/
+│   ├── run_demo.sh         # One-command mock demo (judges)
+│   ├── run_real.sh         # One-command live API demo (needs key)
+│   └── validate_key.py     # Test NVIDIA API key
+├── llm_client.py           # NVIDIA NIM client + mock fallback
+├── target_workflow.py      # 3-step research pipeline (decompose → retrieve → synthesize)
+├── observability.py        # Trace dataclasses and metrics
+├── eval_set.json           # 10 scoreable questions with key_terms
+├── configs/baseline.yaml   # Naive baseline config
+├── .devcontainer/          # GitHub Codespaces auto-setup
+└── conductor/
+    ├── loop.py             # Main optimization loop
+    ├── profiler.py         # Bottleneck analysis
+    ├── strategist.py       # Optimization proposals
+    ├── executor.py         # Eval runner + quality scoring
+    ├── critic.py           # Quality gate
+    ├── sandbox.py          # Config staging
+    └── nat_adapter.py      # NAT-compatible trace export
+```
+
+---
+
+## How quality is measured
+
+Each question in `eval_set.json` has `key_terms` (e.g. `"au"`, `"79"` for gold). The synthesize step is scored by keyword overlap. The Critic rejects any optimization that drops the aggregate score by more than 10 percentage points vs baseline.
 
 ---
 
@@ -170,16 +187,17 @@ LLM calls always go to **NVIDIA hosted NIM** — you do not self-host models for
 
 | Variable | Required | Description |
 |---|---|---|
-| `NVIDIA_API_KEY` | For `--real` mode | API key from [build.nvidia.com](https://build.nvidia.com) |
-| `MOCK_MODE` | No | Set `true` to force simulated responses (default: auto-detect) |
+| `NVIDIA_API_KEY` | For `--real` only | API key from [build.nvidia.com](https://build.nvidia.com) |
+| `MOCK_MODE` | No | Set `true` to force simulated responses (Codespaces default) |
+| `SMALL_MODEL` | No | Override small model (default: `meta/llama-3.1-8b-instruct`) |
 
-Copy `.env.example` to `.env` for local development. **Never commit `.env`** — it is gitignored.
+Copy `.env.example` to `.env` for local development. **Never commit `.env`.**
 
 ---
 
 ## Why the `openai` Python package?
 
-You are **not calling OpenAI**. NVIDIA NIM exposes an OpenAI-compatible HTTP API. The `openai` SDK is used only as an HTTP client pointed at NVIDIA:
+You are **not calling OpenAI**. NVIDIA NIM exposes an OpenAI-compatible HTTP API. The `openai` SDK is used only as an HTTP client:
 
 ```python
 OpenAI(
@@ -192,81 +210,24 @@ All models are NVIDIA-hosted. No OpenAI API key is used.
 
 ---
 
-## Models
+## CI
 
-| Role | Model ID |
+Every push runs `python demo.py --mock --yes` in GitHub Actions (`.github/workflows/ci.yml`) — no API key or GPU required.
+
+---
+
+## Troubleshooting
+
+| Issue | Fix |
 |---|---|
-| Big / reasoning | `nvidia/nemotron-3-ultra-550b-a55b` |
-| Small / cheap | `nvidia/llama-3.1-nemotron-nano-8b-v1` |
-
-Configure per-step models in `configs/baseline.yaml`. Accepted optimizations are saved to `configs/opt*.yaml` and `configs/final.yaml`. Quality is scored by keyword overlap against `eval_set.json` (10 questions); the Critic rejects changes that drop quality by more than 10 percentage points.
-
----
-
-## Project structure
-
-```
-.
-├── demo.py                 # Entry point — Rich terminal demo
-├── app.py                  # Streamlit web UI for judges
-├── SETUP_CHECKLIST.md      # What to provide and when (phased)
-├── llm_client.py           # NVIDIA NIM client + mock fallback
-├── target_workflow.py      # 3-step research pipeline
-├── observability.py        # Trace dataclasses and metrics
-├── eval_set.json           # Scoreable questions with key_terms
-├── configs/baseline.yaml   # Naive baseline config
-├── Dockerfile              # Container image for cloud/CI
-├── .devcontainer/          # GitHub Codespaces config
-└── conductor/
-    ├── loop.py             # Main optimization loop
-    ├── profiler.py         # Bottleneck analysis
-    ├── strategist.py       # Optimization proposals
-    ├── executor.py         # Eval runner + quality scoring
-    ├── critic.py           # Quality gate
-    └── config_io.py        # Config diff + save helpers
-```
-
----
-
-## Demo script (for judges)
-
-1. Show the naive baseline — big model on every step, serial retrieve.
-2. Run `python demo.py --mock` (or `--real` with a valid key).
-3. Watch Conductor profile bottlenecks and propose optimizations.
-4. See a **bad** proposal (synthesize → small model) get **rejected** by the quality gate.
-5. Final slide: e.g. **−34% latency, −24% cost, quality preserved**.
-
----
-
-## Success metrics
-
-- % latency reduction on the sample workflow
-- % cost / token reduction
-- Quality preserved (eval score within tolerance of baseline)
-- Number of bad optimizations correctly rejected by the gate
-
----
-
-## Safety model
-
-- Conductor only operates on a **sample workflow we own**, not production systems.
-- Every change is a **config edit** — the original is always kept.
-- **Propose → validate → revert** — quality regressions are auto-rejected.
-- Stretch: OpenShell sandbox for untrusted config changes.
-
----
-
-## Dependencies
-
-| Package | Purpose |
-|---|---|
-| `openai` | HTTP client for NVIDIA NIM (OpenAI-compatible API) |
-| `pyyaml` | Workflow config files |
-| `rich` | Terminal demo UI |
-| `python-dotenv` | Load env vars from `.env` |
+| `ModuleNotFoundError` | Run `pip install -r requirements.txt` |
+| Demo runs but you want live API | Set `NVIDIA_API_KEY` in `.env`, run `python scripts/validate_key.py` |
+| `403` on real mode | Regenerate key at build.nvidia.com |
+| Real mode very slow | Use `--quick` flag or stick to `--mock` for evaluation |
+| Nemotron Nano hangs | Do not set `SMALL_MODEL` to Nano in `.env`; use default Llama 8B |
 
 ---
 
 ## License
 
-MIT
+MIT License — see [LICENSE](LICENSE).

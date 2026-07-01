@@ -9,4 +9,5 @@ steps:
     model: nvidia/nemotron-3-ultra-550b-a55b
     max_tokens: 256
 execution:
-  retrieve_mode: serial   # serial | parallel
+  retrieve_mode: serial
+  cache_retrieve: false

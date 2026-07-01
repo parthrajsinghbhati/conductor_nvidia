@@ -18,6 +18,11 @@ def config_changes(before: WorkflowConfig, after: WorkflowConfig) -> list[dict[s
     _add("steps.retrieve.model", before.retrieve.model, after.retrieve.model)
     _add("steps.synthesize.model", before.synthesize.model, after.synthesize.model)
     _add("execution.retrieve_mode", before.retrieve_mode, after.retrieve_mode)
+    _add(
+        "execution.cache_retrieve",
+        str(before.cache_retrieve).lower(),
+        str(after.cache_retrieve).lower(),
+    )
     return rows
 
 

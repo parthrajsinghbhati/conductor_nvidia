@@ -3,24 +3,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from llm_client import NvidiaClient, SMALL_MODEL
 from observability import RunMetrics
 
-QUALITY_TOLERANCE   = 0.10   # accept if quality drops by at most 10 percentage points
-LATENCY_MUST_IMPROVE = False  # if True, reject if latency doesn't improve
-COST_MUST_IMPROVE   = False
+QUALITY_TOLERANCE = 0.10
+LATENCY_MUST_IMPROVE = False
+COST_MUST_IMPROVE = False
 
 
 @dataclass
 class Verdict:
     accepted: bool
     reason: str
-    latency_delta_pct: float   # negative = improvement
+    latency_delta_pct: float
     cost_delta_pct: float
-    quality_delta: float       # negative = regression
+    quality_delta: float
+    llm_explanation: str = ""
 
 
-def evaluate(baseline: RunMetrics, candidate: RunMetrics) -> Verdict:
-    """Compare candidate run against baseline; return accept/reject verdict."""
+def evaluate(
+    baseline: RunMetrics,
+    candidate: RunMetrics,
+    client: NvidiaClient | None = None,
+) -> Verdict:
     latency_delta = (
         (candidate.avg_latency_ms - baseline.avg_latency_ms)
         / max(baseline.avg_latency_ms, 1)
@@ -31,32 +36,62 @@ def evaluate(baseline: RunMetrics, candidate: RunMetrics) -> Verdict:
     )
     quality_delta = candidate.quality_score - baseline.quality_score
 
-    # Quality gate
     if quality_delta < -QUALITY_TOLERANCE:
-        return Verdict(
+        reason = (
+            f"Quality regression: {baseline.quality_score:.2%} → "
+            f"{candidate.quality_score:.2%} "
+            f"(delta {quality_delta:+.2%}, threshold ±{QUALITY_TOLERANCE:.0%})"
+        )
+        verdict = Verdict(
             accepted=False,
-            reason=(
-                f"Quality regression: {baseline.quality_score:.2%} → "
-                f"{candidate.quality_score:.2%} "
-                f"(delta {quality_delta:+.2%}, threshold ±{QUALITY_TOLERANCE:.0%})"
-            ),
+            reason=reason,
+            latency_delta_pct=latency_delta * 100,
+            cost_delta_pct=cost_delta * 100,
+            quality_delta=quality_delta,
+        )
+    else:
+        reason_parts = []
+        if latency_delta < 0:
+            reason_parts.append(f"latency {latency_delta * 100:+.1f}%")
+        if cost_delta < 0:
+            reason_parts.append(f"cost {cost_delta * 100:+.1f}%")
+        if candidate.total_cache_hits:
+            reason_parts.append(f"{candidate.total_cache_hits} cache hits")
+        if not reason_parts:
+            reason_parts.append("no latency or cost improvement — marginal win")
+        verdict = Verdict(
+            accepted=True,
+            reason="Quality preserved. " + ", ".join(reason_parts) + ".",
             latency_delta_pct=latency_delta * 100,
             cost_delta_pct=cost_delta * 100,
             quality_delta=quality_delta,
         )
 
-    reason_parts = []
-    if latency_delta < 0:
-        reason_parts.append(f"latency {latency_delta*100:+.1f}%")
-    if cost_delta < 0:
-        reason_parts.append(f"cost {cost_delta*100:+.1f}%")
-    if not reason_parts:
-        reason_parts.append("no latency or cost improvement — marginal win")
+    if client and not client.mock:
+        verdict.llm_explanation = _llm_explain(verdict, client)
+    else:
+        verdict.llm_explanation = verdict.reason
 
-    return Verdict(
-        accepted=True,
-        reason="Quality preserved. " + ", ".join(reason_parts) + ".",
-        latency_delta_pct=latency_delta * 100,
-        cost_delta_pct=cost_delta * 100,
-        quality_delta=quality_delta,
-    )
+    return verdict
+
+
+def _llm_explain(verdict: Verdict, client: NvidiaClient) -> str:
+    status = "ACCEPT" if verdict.accepted else "REJECT"
+    messages = [
+        {
+            "role": "system",
+            "content": "Explain this workflow optimization verdict in one sentence for a demo audience.",
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Verdict: {status}\n"
+                f"Latency delta: {verdict.latency_delta_pct:+.1f}%\n"
+                f"Cost delta: {verdict.cost_delta_pct:+.1f}%\n"
+                f"Quality delta: {verdict.quality_delta:+.2%}\n"
+                f"Reason: {verdict.reason}\n\nExplanation:"
+            ),
+        },
+    ]
+    resp = client.chat(SMALL_MODEL, messages, max_tokens=100)
+    return resp.content.strip()

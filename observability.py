@@ -12,6 +12,7 @@ class StepTrace:
     completion_tokens: int
     latency_ms: float
     cost_usd: float
+    cached: bool = False
 
     @property
     def total_tokens(self) -> int:
@@ -27,7 +28,6 @@ class WorkflowTrace:
 
     @property
     def total_latency_ms(self) -> float:
-        # wall-clock time depends on execution mode (serial = sum; parallel retrieve counted separately)
         return sum(s.latency_ms for s in self.steps)
 
     @property
@@ -38,14 +38,18 @@ class WorkflowTrace:
     def total_tokens(self) -> int:
         return sum(s.total_tokens for s in self.steps)
 
+    @property
+    def cache_hits(self) -> int:
+        return sum(1 for s in self.steps if s.cached)
+
 
 @dataclass
 class RunMetrics:
     """Aggregated metrics over a full eval run."""
     config_name: str
     traces: list[WorkflowTrace]
-    wall_latency_ms: float   # measured wall-clock total (accounts for parallelism)
-    quality_score: float     # 0–1
+    wall_latency_ms: float
+    quality_score: float
 
     @property
     def avg_latency_ms(self) -> float:
@@ -59,6 +63,10 @@ class RunMetrics:
     def total_tokens(self) -> int:
         return sum(t.total_tokens for t in self.traces)
 
+    @property
+    def total_cache_hits(self) -> int:
+        return sum(t.cache_hits for t in self.traces)
+
     def summary(self) -> dict:
         return {
             "config": self.config_name,
@@ -67,4 +75,5 @@ class RunMetrics:
             "total_cost_usd": round(self.total_cost_usd, 6),
             "total_tokens": self.total_tokens,
             "quality_score": round(self.quality_score, 3),
+            "cache_hits": self.total_cache_hits,
         }
