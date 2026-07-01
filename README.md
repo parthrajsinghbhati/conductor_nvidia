@@ -12,7 +12,7 @@ Conductor is a supervisory multi-agent system — an **SRE for agentic workflows
 
 ## For judges — run the demo
 
-Pick **one** option below. Mock mode needs no API key and finishes in ~10 seconds. Real mode calls live Nemotron on NVIDIA NIM (~10–20 min quick, ~30–60 min full).
+Pick **one** option below. Mock mode needs no API key and finishes in ~15 seconds. Real mode calls live Nemotron 3 Ultra on NVIDIA NIM (~10–20 min quick, ~30–60 min full).
 
 ### Option A — Mock demo in Codespaces (recommended, no API key)
 
@@ -40,7 +40,7 @@ python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-python demo.py --mock --yes          # ~10 seconds
+python demo.py --mock --yes          # ~15 seconds
 ```
 
 ### Option C — Real run with live NVIDIA API (~10–20 min)
@@ -66,9 +66,10 @@ python demo.py --real --yes          # full: 10 questions (~30–60 min)
 
 | Command | API key | Time | Questions |
 |---|---|---|---|
-| `python demo.py --mock --yes` | Not needed | ~10 sec | 10 |
+| `python demo.py --mock --yes` | Not needed | ~15 sec | 10 |
 | `python demo.py --real --quick --yes` | Required | ~10–20 min | 3 |
 | `python demo.py --real --yes` | Required | ~30–60 min | 10 |
+| `python demo.py --mock --yes --no-sandbox` | Not needed | ~15 sec | 10 (no sandbox staging) |
 
 **Note:** `--real` overrides Codespaces' default mock mode. You do not need to change `MOCK_MODE` in `.env` if you pass `--real`.
 
@@ -78,11 +79,11 @@ python demo.py --real --yes          # full: 10 questions (~30–60 min)
 
 ## What you should see
 
-The terminal demo runs four optimization rounds on a 10-question eval set:
+The terminal demo runs four optimization rounds on the 10-question eval set:
 
 | Step | What happens |
 |---|---|
-| **Baseline** | Naive config — Nemotron Ultra on every step, serial retrieve, no cache |
+| **Baseline** | Naive config — Nemotron 3 Ultra on every step, serial retrieve, no cache |
 | **Profile** | Bottleneck table + notes (e.g. decompose is low-complexity) |
 | **Optimize loop** | Four proposals; you auto-approve with `--yes` |
 
@@ -168,13 +169,15 @@ Use `--no-sandbox` to skip staging (not recommended for demo).
 ├── configs/baseline.yaml   # Naive baseline config
 ├── .devcontainer/          # GitHub Codespaces auto-setup
 └── conductor/
-    ├── loop.py             # Main optimization loop
-    ├── profiler.py         # Bottleneck analysis
-    ├── strategist.py       # Optimization proposals
-    ├── executor.py         # Eval runner + quality scoring
-    ├── critic.py           # Quality gate
-    ├── sandbox.py          # Config staging
-    └── nat_adapter.py      # NAT-compatible trace export
+    ├── __init__.py          # Package marker
+    ├── loop.py              # Main optimization loop
+    ├── profiler.py          # Bottleneck analysis
+    ├── strategist.py        # Optimization proposals
+    ├── executor.py          # Eval runner + quality scoring
+    ├── critic.py            # Quality gate
+    ├── config_io.py         # Config diff + persistence helpers
+    ├── sandbox.py           # Config staging (OpenShell-style)
+    └── nat_adapter.py       # NAT-compatible trace export
 ```
 
 ---
