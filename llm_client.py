@@ -27,6 +27,12 @@ NANO_PREFILL = "\n\n"
 DEFAULT_TIMEOUT_S = 120.0
 NANO_TIMEOUT_S = 45.0
 
+# Retry only transient failures (timeouts, rate limits, 5xx). Permanent errors
+# such as authentication/permission are re-raised immediately so a bad/missing
+# key surfaces loudly instead of being silently retried.
+MAX_API_RETRIES = 3
+RETRY_BACKOFF_S = 2.0
+
 # Approximate cost per token (input ≈ output averaged for simplicity)
 COST_PER_TOKEN: dict[str, float] = {
     BIG_MODEL:            7.99 / 1_000_000,
@@ -48,6 +54,20 @@ def is_nano_model(model: str) -> bool:
 
 def is_small_model(model: str) -> bool:
     return model != BIG_MODEL
+
+
+def _transient_error_types() -> tuple[type[Exception], ...]:
+    """Retryable openai exception types, resolved defensively across SDK versions.
+
+    Auth/permission errors are deliberately excluded so they propagate immediately.
+    Returns () if openai is unavailable, in which case nothing is treated as retryable.
+    """
+    try:
+        import openai
+    except ImportError:
+        return ()
+    names = ("APITimeoutError", "APIConnectionError", "RateLimitError", "InternalServerError")
+    return tuple(t for n in names if (t := getattr(openai, n, None)) is not None)
 
 
 @dataclass
@@ -106,7 +126,7 @@ class NvidiaClient:
             kwargs["temperature"] = 0
             request_timeout = NANO_TIMEOUT_S
 
-        resp = self._oai.chat.completions.create(**kwargs, timeout=request_timeout)
+        resp = self._create_with_retry(kwargs, request_timeout)
         latency_ms = (time.monotonic() - t0) * 1000
         u = resp.usage
         total = u.prompt_tokens + u.completion_tokens
@@ -118,6 +138,26 @@ class NvidiaClient:
             latency_ms=latency_ms,
             cost_usd=total * COST_PER_TOKEN.get(model, 0.5 / 1_000_000),
         )
+
+    def _create_with_retry(self, kwargs: dict, request_timeout: float):
+        """Call the NIM endpoint, retrying only on transient errors.
+
+        A single rate-limit / timeout / 5xx during a long live run no longer
+        aborts the whole demo. Permanent errors (e.g. auth) are re-raised on the
+        first attempt so a bad key fails fast rather than after 3 retries.
+        """
+        transient = _transient_error_types()
+        last_exc: Exception | None = None
+        for attempt in range(MAX_API_RETRIES):
+            try:
+                return self._oai.chat.completions.create(**kwargs, timeout=request_timeout)
+            except transient as exc:
+                last_exc = exc
+                if attempt == MAX_API_RETRIES - 1:
+                    break
+                time.sleep(RETRY_BACKOFF_S * (attempt + 1))
+        assert last_exc is not None
+        raise last_exc
 
     # ── mock ──────────────────────────────────────────────────────────────
 

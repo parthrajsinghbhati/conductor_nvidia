@@ -35,11 +35,18 @@ def run_eval(
     if quality_fn is None:
         quality_fn = keyword_quality
 
-    scores = [
-        quality_fn(trace.answer, item.get("key_terms", []))
+    # Only average over questions that are actually scoreable (have key_terms), so a
+    # malformed eval entry can't silently inflate quality to a perfect score and mask
+    # a regression. Fall back to all scores if none are measurable.
+    scored = [
+        (quality_fn(trace.answer, item.get("key_terms", [])), bool(item.get("key_terms")))
         for trace, item in zip(traces, eval_set)
     ]
-    quality = sum(scores) / max(len(scores), 1)
+    measurable = [s for s, has_terms in scored if has_terms]
+    if measurable:
+        quality = sum(measurable) / len(measurable)
+    else:
+        quality = sum(s for s, _ in scored) / max(len(scored), 1)
 
     metrics = RunMetrics(
         config_name=config.name,

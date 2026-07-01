@@ -16,7 +16,6 @@ class StepProfile:
     avg_latency_ms: float
     avg_tokens: float
     pct_latency: float
-    pct_cost: float
     complexity: str
     cache_hits: int = 0
 
@@ -25,7 +24,6 @@ class StepProfile:
 class ProfileReport:
     steps: list[StepProfile]
     total_avg_latency_ms: float
-    total_avg_cost_usd: float
     retrieve_mode: str
     cache_enabled: bool
     bottleneck: str
@@ -44,7 +42,6 @@ def analyze(
 
     step_names = list(dict.fromkeys(s.step for t in traces for s in t.steps))
     total_latency = sum(sum(s.latency_ms for s in t.steps) for t in traces) / len(traces)
-    total_cost = sum(t.total_cost_usd for t in traces) / len(traces)
 
     step_profiles: list[StepProfile] = []
     for name in step_names:
@@ -63,7 +60,6 @@ def analyze(
             avg_lat = sum(r.latency_ms for r in rows) / len(rows)
 
         avg_tok = sum(r.completion_tokens for r in rows) / len(rows)
-        avg_cost = sum(r.cost_usd for r in rows) / len(rows)
         hits = sum(1 for r in rows if r.cached)
 
         complexity = (
@@ -76,7 +72,6 @@ def analyze(
             avg_latency_ms=avg_lat,
             avg_tokens=avg_tok,
             pct_latency=avg_lat / max(total_latency, 1),
-            pct_cost=avg_cost / max(total_cost, 1),
             complexity=complexity,
             cache_hits=hits,
         ))
@@ -102,7 +97,6 @@ def analyze(
     report = ProfileReport(
         steps=step_profiles,
         total_avg_latency_ms=total_latency,
-        total_avg_cost_usd=total_cost,
         retrieve_mode=retrieve_mode,
         cache_enabled=cache_enabled,
         bottleneck=bottleneck,

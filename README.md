@@ -96,7 +96,7 @@ The terminal demo runs four optimization rounds on the 10-question eval set:
 | 3 | **Enable retrieve cache** | ✅ Accepted |
 | 4 | Route **synthesize** → small model | ❌ **Rejected** (quality regression) |
 
-**Final summary (approximate):** ~65–70% faster, ~65–70% cheaper, **quality preserved**. Accepted configs are saved under `configs/opt*.yaml` and `configs/final.yaml`.
+**Final summary (approximate):** ~60–70% faster, ~60–70% cheaper, **quality preserved**. Accepted configs are written at runtime to `configs/opt*.yaml` and `configs/final.yaml` (generated artifacts — git-ignored, regenerated on every run).
 
 This rejection is intentional — it shows the **quality gate** working: Conductor will not ship a faster-but-wrong config.
 
@@ -228,6 +228,7 @@ Every push runs `python demo.py --mock --yes` in GitHub Actions (`.github/workfl
 | `ModuleNotFoundError` | Run `pip install -r requirements.txt` |
 | Demo runs but you want live API | Set `NVIDIA_API_KEY` in `.env`, run `python scripts/validate_key.py` |
 | `403` on real mode | Regenerate key at build.nvidia.com |
+| Transient API error mid-run (timeout / rate limit / 5xx) | Retried automatically up to 3× with backoff; a missing/invalid key still fails fast so it surfaces immediately |
 | Real mode very slow | Use `--quick` flag or stick to `--mock` for evaluation |
 | Nemotron Nano hangs | Do not set `SMALL_MODEL` to Nano in `.env`; use default Llama 8B |
 

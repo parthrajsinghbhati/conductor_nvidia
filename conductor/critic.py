@@ -7,6 +7,8 @@ from llm_client import NvidiaClient, SMALL_MODEL
 from observability import RunMetrics
 
 QUALITY_TOLERANCE = 0.10
+# When True, reject a quality-preserving change that makes the given metric worse.
+# Default False: the demo accepts any change that holds quality within tolerance.
 LATENCY_MUST_IMPROVE = False
 COST_MUST_IMPROVE = False
 
@@ -50,22 +52,47 @@ def evaluate(
             quality_delta=quality_delta,
         )
     else:
-        reason_parts = []
-        if latency_delta < 0:
-            reason_parts.append(f"latency {latency_delta * 100:+.1f}%")
-        if cost_delta < 0:
-            reason_parts.append(f"cost {cost_delta * 100:+.1f}%")
-        if candidate.total_cache_hits:
-            reason_parts.append(f"{candidate.total_cache_hits} cache hits")
-        if not reason_parts:
-            reason_parts.append("no latency or cost improvement — marginal win")
-        verdict = Verdict(
-            accepted=True,
-            reason="Quality preserved. " + ", ".join(reason_parts) + ".",
-            latency_delta_pct=latency_delta * 100,
-            cost_delta_pct=cost_delta * 100,
-            quality_delta=quality_delta,
-        )
+        # Quality preserved. Optionally require that latency/cost did not regress.
+        required_regressions = []
+        if LATENCY_MUST_IMPROVE and latency_delta > 0:
+            required_regressions.append(f"latency {latency_delta * 100:+.1f}%")
+        if COST_MUST_IMPROVE and cost_delta > 0:
+            required_regressions.append(f"cost {cost_delta * 100:+.1f}%")
+
+        if required_regressions:
+            verdict = Verdict(
+                accepted=False,
+                reason=(
+                    "Quality preserved but a required metric regressed: "
+                    + ", ".join(required_regressions) + "."
+                ),
+                latency_delta_pct=latency_delta * 100,
+                cost_delta_pct=cost_delta * 100,
+                quality_delta=quality_delta,
+            )
+        else:
+            wins = []
+            if latency_delta < 0:
+                wins.append(f"latency {latency_delta * 100:+.1f}%")
+            if cost_delta < 0:
+                wins.append(f"cost {cost_delta * 100:+.1f}%")
+            if candidate.total_cache_hits:
+                wins.append(f"{candidate.total_cache_hits} cache hits")
+            if wins:
+                summary = ", ".join(wins)
+            else:
+                # No net improvement — report the deltas honestly, don't call it a win.
+                summary = (
+                    f"no net gain (latency {latency_delta * 100:+.1f}%, "
+                    f"cost {cost_delta * 100:+.1f}%)"
+                )
+            verdict = Verdict(
+                accepted=True,
+                reason="Quality preserved. " + summary + ".",
+                latency_delta_pct=latency_delta * 100,
+                cost_delta_pct=cost_delta * 100,
+                quality_delta=quality_delta,
+            )
 
     if client and not client.mock:
         verdict.llm_explanation = _llm_explain(verdict, client)

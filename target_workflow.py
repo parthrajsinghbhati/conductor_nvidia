@@ -174,7 +174,8 @@ class ResearchPipeline:
             cfg.model, messages, cfg.max_tokens,
             step_name="retrieve", mock_key_terms=mock_key_terms,
         )
-        _RETRIEVE_CACHE[cache_key] = resp
+        if self.config.cache_retrieve:
+            _RETRIEVE_CACHE[cache_key] = resp
         return resp, False
 
     def _synthesize(self, question: str, summaries: list[str], mock_key_terms=None) -> LLMResponse:

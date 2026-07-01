@@ -21,8 +21,6 @@ from target_workflow import WorkflowConfig
 from conductor.loop import ConductorLoop, ConductorResult, IterationResult
 from conductor.profiler import ProfileReport, analyze
 from conductor.executor import run_eval
-from conductor.strategist import Optimization
-from conductor.nat_adapter import nat_status
 
 CONSOLE = Console(width=120)
 EVAL_PATH = Path("eval_set.json")
